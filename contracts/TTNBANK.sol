@@ -44,6 +44,32 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
     mapping(address => uint256) public referralRewards; // referral => referralReward
     mapping(address => uint256) public referralTotalRewards; // referral => referral => referralReward
 
+    event LogSetDevWallet(address indexed devWallet);
+    event LogSetTreasury(address indexed treasury);
+    event LogSetToken(address indexed token);
+    event LogSetAPY(uint256 indexed apy);
+    event LogDeposit(
+        address indexed staker,
+        uint256 indexed epochNumber,
+        uint256 indexed stakedAmount
+    );
+    event LogSetReferal(address indexed user, address indexed referral);
+    event LogWithdraw(
+        address indexed staker,
+        uint256 epochNumber,
+        uint256 indexed stakedAmount
+    );
+    event LogWithdrawReward(
+        address indexed user,
+        uint256 indexed epochNumber,
+        uint256 indexed reward
+    );
+    event LogSetNewEpoch(uint256 indexed epochNumber);
+    event LogWithdrawReferal(
+        address indexed referral,
+        uint256 indexed referralReward
+    );
+
     constructor(
         IERC20 _token,
         uint256 _epochLength,
@@ -59,8 +85,6 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
         startTime = block.timestamp;
     }
 
-    event LogSetDevWallet(address indexed devWallet);
-
     function setDevWallet(address _devWallet) public onlyOwner {
         require(_devWallet != address(0), "setDevWallet: ZERO_ADDRESS");
         require(_devWallet != devWallet, "setDevWallet: SAME_ADDRESS");
@@ -69,8 +93,6 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
 
         emit LogSetDevWallet(devWallet);
     }
-
-    event LogSetTreasury(address indexed treasury);
 
     function setTreasury(address _treasury) public onlyOwner {
         require(_treasury != address(0), "setTreasury: ZERO_ADDRESS");
@@ -88,8 +110,6 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
         _unpause();
     }
 
-    event LogSetToken(address indexed token);
-
     function setToken(IERC20 _token) public onlyOwner {
         require(address(_token) != address(0), "setToken: ZERO_ADDRESS");
         require(address(_token) != address(token), "setToken: SAME_ADDRESS");
@@ -97,8 +117,6 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
         token = _token;
         emit LogSetToken(address(token));
     }
-
-    event LogSetAPY(uint256 indexed apy);
 
     function _setAPY(uint256 _apy) internal {
         apy[epochNumber + 1] = _apy;
@@ -109,13 +127,6 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
         _setNewEpoch();
         _setAPY(_apy);
     }
-
-    event LogDeposit(
-        address indexed staker,
-        uint256 indexed epochNumber,
-        uint256 indexed stakedAmount
-    );
-    event LogSetReferal(address indexed user, address indexed referral);
 
     function deposit(uint256 _amount, address _referral)
         external
@@ -197,12 +208,6 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
         );
     }
 
-    event LogWithdraw(
-        address indexed staker,
-        uint256 epochNumber,
-        uint256 indexed stakedAmount
-    );
-
     function withdraw(uint256 _amount) external whenNotPaused nonReentrant {
         require(_amount > 0, "withdraw: ZERO_WITHDRAW_AMOUNT");
 
@@ -270,12 +275,6 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
             amount[msg.sender][epochNumber + 1]
         );
     }
-
-    event LogWithdrawReward(
-        address indexed user,
-        uint256 indexed epochNumber,
-        uint256 indexed reward
-    );
 
     function _withdrawReward() internal returns (bool hasReward) {
         _setNewEpoch();
@@ -385,8 +384,6 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
         }
     }
 
-    event LogSetNewEpoch(uint256 indexed epochNumber);
-
     function _setNewEpoch() internal {
         uint256 delta = block.timestamp - startTime;
         if (delta >= epochLength * (epochNumber + 1)) {
@@ -412,11 +409,6 @@ contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
             emit LogSetNewEpoch(epochNumber);
         }
     }
-
-    event LogWithdrawReferal(
-        address indexed referral,
-        uint256 indexed referralReward
-    );
 
     function withdrawReferal() external whenNotPaused nonReentrant {
         require(

@@ -7,7 +7,7 @@ import "./Ownable.sol";
 import "./Pausable.sol";
 import "./ReentrancyGuard.sol";
 
-contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
+contract TTNBANK is Ownable, Pausable, ReentrancyGuard {
     uint256 public constant MIN_DEPOSIT_AMOUNT = 20; // Note: 20 * 10**decimals
     uint256 public constant MAX_DEPOSIT_AMOUNT = 25000; // Note: 25000 * 10**decimals
 
@@ -105,7 +105,7 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
         emit LogSetAPY(_apy);
     }
 
-    function setAPY(uint256 _apy) public onlyOwner {
+    function setAPY(uint256 _apy) external onlyOwner {
         _setNewEpoch();
         _setAPY(_apy);
     }
@@ -348,7 +348,7 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
     }
 
     function getPendingReward(address user)
-        public
+        external
         view
         returns (uint256 pendingReward)
     {

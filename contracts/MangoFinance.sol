@@ -36,9 +36,13 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
 
     mapping(address => mapping(uint256 => uint256)) public amount; // staker => (epochNumber => stakedAmount)
     mapping(address => uint256) public lastClaimEpochNumber; // staker => lastClaimEpochNumber
+    mapping(address => uint256) public lastActionEpochNumber; // staker => lastActionEpochNumber
+    mapping(address => uint256) public lastRewards; // staker => lastReward
+    mapping(address => uint256) public totalRewards; // staker => totalReward
     mapping(address => address) public referrals; // staker => referral
 
-    mapping(address => uint256) public referralRewards; // referral => referralRewards
+    mapping(address => uint256) public referralRewards; // referral => referralReward
+    mapping(address => uint256) public referralTotalRewards; // referral => referral => referralReward
 
     constructor(
         IERC20 _token,
@@ -124,6 +128,8 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
             "deposit: OUT_BOUNDARY"
         );
 
+        _setNewEpoch();
+
         uint256 depositFee = (_amount * DEPOSIT_FEE) / DENOMINATOR;
 
         require(
@@ -149,7 +155,17 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
             "deposit: TRANSFERFROM_TO_DEV_FAIL"
         );
 
-        if (amount[msg.sender][epochNumber + 1] > 0) {
+        for (
+            uint256 index = epochNumber;
+            index > lastActionEpochNumber[msg.sender] + 1;
+            index--
+        ) {
+            amount[msg.sender][index] = amount[msg.sender][
+                lastActionEpochNumber[msg.sender] + 1
+            ];
+        }
+
+        if (epochNumber == lastActionEpochNumber[msg.sender]) {
             amount[msg.sender][epochNumber + 1] += _amount;
         } else {
             amount[msg.sender][epochNumber + 1] =
@@ -171,6 +187,8 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
             referrals[msg.sender] = _referral;
             emit LogSetReferal(msg.sender, _referral);
         }
+
+        lastActionEpochNumber[msg.sender] = epochNumber;
 
         emit LogDeposit(
             msg.sender,
@@ -210,7 +228,7 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
             "withdraw: TRANSFER_TO_DEV_FAIL"
         );
 
-        if (amount[msg.sender][epochNumber + 1] > 0) {
+        if (epochNumber == lastActionEpochNumber[msg.sender]) {
             require(
                 amount[msg.sender][epochNumber + 1] >= _amount,
                 "withdraw: INSUFFICIENT_STAKED_NEXT_BALANCE"
@@ -227,6 +245,8 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
                 amount[msg.sender][epochNumber] -
                 _amount;
         }
+
+        lastActionEpochNumber[msg.sender] = epochNumber;
 
         if (totalAmount[epochNumber + 1] > 0) {
             require(
@@ -258,9 +278,28 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
     );
 
     function _withdrawReward() internal returns (bool hasReward) {
-        // TODO
-        // pendingReward
+        _setNewEpoch();
+        for (
+            uint256 index = epochNumber;
+            index > lastActionEpochNumber[msg.sender] + 1;
+            index--
+        ) {
+            amount[msg.sender][index] = amount[msg.sender][
+                lastActionEpochNumber[msg.sender] + 1
+            ];
+        }
+
         uint256 pendingReward;
+        for (
+            uint256 index = lastClaimEpochNumber[msg.sender];
+            index < epochNumber;
+            index++
+        ) {
+            pendingReward +=
+                (amount[msg.sender][index] * apy[index]) /
+                totalAmount[index];
+        }
+
         if (pendingReward > 0) {
             hasReward = true;
             uint256 withdrawRewardFee = (pendingReward * WITHDRAW_FEE) /
@@ -294,6 +333,8 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
             );
 
             lastClaimEpochNumber[msg.sender] = epochNumber;
+            lastRewards[msg.sender] = pendingReward;
+            totalRewards[msg.sender] += pendingReward;
 
             emit LogWithdrawReward(msg.sender, epochNumber, pendingReward);
         } else {
@@ -303,13 +344,46 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
 
     function withdrawReward() external whenNotPaused nonReentrant {
         require(_withdrawReward(), "withdrawReward: NO_REWARD");
+        lastActionEpochNumber[msg.sender] = epochNumber;
     }
 
     function getPendingReward(address user)
         public
         view
         returns (uint256 pendingReward)
-    {}
+    {
+        for (
+            uint256 index = lastClaimEpochNumber[user];
+            index < lastActionEpochNumber[user];
+            index++
+        ) {
+            pendingReward +=
+                (amount[user][index] * apy[index]) /
+                totalAmount[index];
+        }
+
+        uint256 newEpochNumber = epochLength +
+            (block.timestamp - startTime - epochLength * epochNumber) /
+            epochLength;
+        for (
+            uint256 index = lastActionEpochNumber[user];
+            index < newEpochNumber;
+            index++
+        ) {
+            uint256 amountValue = (index == lastActionEpochNumber[user])
+                ? amount[user][index]
+                : amount[user][lastActionEpochNumber[user] + 1];
+            uint256 apyValue = (
+                apy[index] > 0 ? apy[index] : (apy[epochNumber + 1] > 0)
+                    ? apy[epochNumber + 1]
+                    : apy[epochNumber]
+            );
+            uint256 totalAmountValue = (totalAmount[index] > 0)
+                ? totalAmount[index]
+                : totalAmount[epochNumber];
+            pendingReward += (amountValue * apyValue) / totalAmountValue;
+        }
+    }
 
     event LogSetNewEpoch(uint256 indexed epochNumber);
 
@@ -353,6 +427,7 @@ contract MangoFinance is Ownable, Pausable, ReentrancyGuard {
             token.transfer(msg.sender, referralRewards[msg.sender]),
             "withdrawReferal: TRANSFER_FAIL"
         );
+        referralTotalRewards[msg.sender] += referralRewards[msg.sender];
         referralRewards[msg.sender] = 0;
 
         emit LogWithdrawReferal(msg.sender, referralRewards[msg.sender]);
